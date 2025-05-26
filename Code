@@ -1,0 +1,291 @@
+import React, { useState, useEffect } from 'react';
+
+// Главный компонент приложения
+const App = () => {
+    // Состояние для хранения пользовательского запроса (промпта)
+    const [prompt, setPrompt] = useState('');
+    // Состояние для хранения ответа от ИИ
+    const [response, setResponse] = useState('');
+    // Состояние для отображения индикатора загрузки
+    const [isLoading, setIsLoading] = useState(false);
+    // Состояние для хранения сообщений об ошибках
+    const [error, setError] = useState('');
+    // Состояние для переключения между режимами: true = креативный, false = обычный
+    const [isCreativeMode, setIsCreativeMode] = useState(true);
+    // Состояние для управления видимостью модального окна настроек
+    const [showSettingsModal, setShowSettingsModal] = useState(false);
+    // Состояние для текущей темы: 'light' или 'dark'
+    const [theme, setTheme] = useState('light');
+    // Состояние для настройки: очищать ли ответ при смене режима
+    const [clearResponseOnModeChange, setClearResponseOnModeChange] = useState(true);
+
+    // useEffect для применения темы к элементу <body>
+    useEffect(() => {
+        if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+    }, [theme]);
+
+    // Функция для обработки отправки запроса к ИИ
+    const handleGenerateResponse = async () => {
+        setError(''); // Очищаем предыдущие ошибки
+        setResponse(''); // Очищаем предыдущий ответ
+        setIsLoading(true); // Включаем индикатор загрузки
+
+        if (!prompt.trim()) { // Проверяем, что промпт не пустой
+            setError(isCreativeMode ? 'Пожалуйста, введите вашу тему или идею.' : 'Пожалуйста, введите ваш запрос.');
+            setIsLoading(false);
+            return;
+        }
+
+        try {
+            await generateGeminiResponse(); // Вызываем функцию для Gemini
+        } catch (err) {
+            console.error('Ошибка при генерации ответа:', err);
+            setError(`Произошла ошибка: ${err.message}. Попробуйте еще раз.`);
+        } finally {
+            setIsLoading(false); // Выключаем индикатор загрузки
+        }
+    };
+
+    // Функция для вызова Gemini API
+    const generateGeminiResponse = async () => {
+        let chatHistory = [];
+        let finalPrompt = prompt; // Изначально промпт равен введенному пользователем
+
+        // Если включен креативный режим, формируем специальный промпт
+        if (isCreativeMode) {
+            finalPrompt = `Я ищу креативные идеи для: "${prompt}".
+            Пожалуйста, предложи 3-5 различных концепций или направлений.
+            Для каждой концепции укажи:
+            1. Название/Тема
+            2. Краткое описание
+            3. 2-3 ключевых элемента или идеи для развития.
+            
+            Будь максимально креативным и разнообразным в ответах.`;
+        }
+
+        chatHistory.push({ role: "user", parts: [{ text: finalPrompt }] });
+
+        const payload = { contents: chatHistory };
+        // API ключ будет предоставлен средой выполнения Canvas
+        const apiKey = "";
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (result.candidates && result.candidates.length > 0 &&
+            result.candidates[0].content && result.candidates[0].content.parts &&
+            result.candidates[0].content.parts.length > 0) {
+            const text = result.candidates[0].content.parts[0].text;
+            setResponse(text); // Устанавливаем полученный текст как ответ
+        } else {
+            console.error('Неожиданная структура ответа от Gemini API:', result);
+            setError('Не удалось получить ответ от Gemini. Проверьте запрос или попробуйте позже.');
+        }
+    };
+
+    // Обработчик события нажатия клавиши для текстового поля
+    const handleKeyDown = (e) => {
+        // Если нажата клавиша Enter и НЕ нажата клавиша Shift
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault(); // Предотвращаем стандартное действие (переход на новую строку)
+            handleGenerateResponse(); // Вызываем функцию генерации ответа
+        }
+    };
+
+    return (
+        <div className={`min-h-screen ${theme === 'dark' ? 'bg-gray-900 text-gray-100' : 'bg-gradient-to-br from-indigo-50 to-purple-50 text-gray-800'} flex items-center justify-center p-4 transition-colors duration-300`}>
+            <div className={`relative bg-white ${theme === 'dark' ? 'dark:bg-gray-800 dark:border-gray-700' : ''} rounded-xl shadow-2xl p-6 md:p-8 w-full max-w-3xl border border-gray-200`}>
+                {/* Кнопка настроек */}
+                <button
+                    onClick={() => setShowSettingsModal(true)}
+                    className="absolute top-4 right-4 p-2 rounded-full bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 transition-colors duration-200"
+                    title="Настройки"
+                >
+                    {/* Иконка шестеренки (SVG) */}
+                    <svg className="w-6 h-6 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    </svg>
+                </button>
+
+                <h1 className="text-3xl md:text-4xl font-extrabold text-center text-gray-800 dark:text-gray-100 mb-6">
+                    <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">
+                        GemAI: {isCreativeMode ? 'Ваш Креативный Партнер' : 'Обычный Режим'}
+                    </span>
+                </h1>
+                <p className="text-center text-gray-600 dark:text-gray-300 mb-8 text-lg">
+                    {isCreativeMode
+                        ? 'Введите тему или идею, и GemAI сгенерирует для вас уникальные креативные концепции.'
+                        : 'Задайте любой вопрос Google Gemini и получите прямой ответ.'}
+                </p>
+
+                {/* Переключатель режимов */}
+                <div className="mb-6 flex justify-center items-center space-x-4">
+                    <label className="flex items-center cursor-pointer">
+                        <input
+                            type="radio"
+                            name="mode"
+                            value="normal"
+                            checked={!isCreativeMode}
+                            onChange={() => {
+                                setIsCreativeMode(false);
+                                if (clearResponseOnModeChange) setResponse(''); // Очищаем ответ при смене режима
+                                setError(''); // Очищаем ошибку
+                            }}
+                            className="form-radio h-5 w-5 text-indigo-600"
+                        />
+                        <span className="ml-2 text-gray-700 dark:text-gray-300 font-medium">Обычный режим</span>
+                    </label>
+                    <label className="flex items-center cursor-pointer">
+                        <input
+                            type="radio"
+                            name="mode"
+                            value="creative"
+                            checked={isCreativeMode}
+                            onChange={() => {
+                                setIsCreativeMode(true);
+                                if (clearResponseOnModeChange) setResponse(''); // Очищаем ответ при смене режима
+                                setError(''); // Очищаем ошибку
+                            }}
+                            className="form-radio h-5 w-5 text-indigo-600"
+                        />
+                        <span className="ml-2 text-gray-700 dark:text-gray-300 font-medium">Креативный Партнер</span>
+                    </label>
+                </div>
+
+                {/* Поле для ввода запроса */}
+                <div className="mb-6">
+                    <label htmlFor="prompt-input" className="block text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        {isCreativeMode ? 'Ваша тема или идея:' : 'Ваш запрос к Gemini:'}
+                    </label>
+                    <textarea
+                        id="prompt-input"
+                        className={`w-full p-3 border rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm resize-y min-h-[100px] text-base
+                            ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'}`}
+                        placeholder={isCreativeMode
+                            ? "Например: 'Идея для нового мобильного приложения', 'Сюжет для короткометражного фильма', 'Необычный подарок на день рождения'."
+                            : "Например: 'Расскажи о последних достижениях в области искусственного интеллекта.'"}
+                        value={prompt}
+                        onChange={(e) => setPrompt(e.target.value)}
+                        onKeyDown={handleKeyDown} // Добавлен обработчик нажатия клавиш
+                        rows="5"
+                    ></textarea>
+                </div>
+
+                {/* Кнопка отправки */}
+                <button
+                    onClick={handleGenerateResponse}
+                    disabled={isLoading}
+                    className={`w-full py-3 px-4 rounded-lg font-semibold text-white transition-all duration-300 ease-in-out
+                        ${isLoading ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 shadow-lg hover:shadow-xl'}`}
+                >
+                    {isLoading ? (
+                        <span className="flex items-center justify-center">
+                            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Генерация...
+                        </span>
+                    ) : (
+                        isCreativeMode ? 'Сгенерировать креативные идеи' : 'Получить ответ от Gemini'
+                    )}
+                </button>
+
+                {/* Область для вывода ошибок */}
+                {error && (
+                    <div className="mt-6 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg text-base">
+                        <p className="font-medium">Ошибка:</p>
+                        <p>{error}</p>
+                    </div>
+                )}
+
+                {/* Область для вывода ответа ИИ */}
+                {response && (
+                    <div className="mt-6 p-4 rounded-lg shadow-inner
+                        ${theme === 'dark' ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}">
+                        <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-3">
+                            {isCreativeMode ? 'Ваши креативные идеи от GemAI:' : 'Ответ от Gemini:'}
+                        </h3>
+                        <div className="prose max-w-none text-gray-700 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">
+                            {response}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Модальное окно настроек */}
+            {showSettingsModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div className={`bg-white ${theme === 'dark' ? 'dark:bg-gray-800 dark:text-gray-100' : ''} rounded-xl shadow-2xl p-6 w-full max-w-md`}>
+                        <h2 className="text-2xl font-bold mb-6 text-gray-800 dark:text-gray-100">Настройки</h2>
+
+                        {/* Настройка темы */}
+                        <div className="mb-6">
+                            <label className="block text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                Тема:
+                            </label>
+                            <div className="flex space-x-4">
+                                <label className="flex items-center cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="theme"
+                                        value="light"
+                                        checked={theme === 'light'}
+                                        onChange={() => setTheme('light')}
+                                        className="form-radio h-5 w-5 text-indigo-600"
+                                    />
+                                    <span className="ml-2 text-gray-700 dark:text-gray-300">Светлая</span>
+                                </label>
+                                <label className="flex items-center cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="theme"
+                                        value="dark"
+                                        checked={theme === 'dark'}
+                                        onChange={() => setTheme('dark')}
+                                        className="form-radio h-5 w-5 text-indigo-600"
+                                    />
+                                    <span className="ml-2 text-gray-700 dark:text-gray-300">Темная</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        {/* Другие фишки: Очищать ответ при смене режима */}
+                        <div className="mb-6">
+                            <label className="flex items-center cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={clearResponseOnModeChange}
+                                    onChange={(e) => setClearResponseOnModeChange(e.target.checked)}
+                                    className="form-checkbox h-5 w-5 text-indigo-600 rounded"
+                                />
+                                <span className="ml-2 text-gray-700 dark:text-gray-300 font-medium">Очищать ответ при смене режима</span>
+                            </label>
+                        </div>
+
+                        {/* Кнопка закрытия модального окна */}
+                        <button
+                            onClick={() => setShowSettingsModal(false)}
+                            className="w-full py-3 px-4 rounded-lg font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-lg transition-colors duration-300"
+                        >
+                            Закрыть
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default App;
